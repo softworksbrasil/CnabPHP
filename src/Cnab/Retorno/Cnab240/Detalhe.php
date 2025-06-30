@@ -10,6 +10,9 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
     public $segmento_t;
     public $segmento_u;
     public $segmento_w;
+    public $segmento_a;
+    public $segmento_j;
+    public $segmento_o;
 
     public function __construct(\Cnab\Retorno\IArquivo $arquivo)
     {
@@ -63,7 +66,18 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getCodigo()
     {
-        return (int) $this->segmento_t->codigo_movimento;
+        $codigo = null;
+
+        if($this->segmento_t)
+            $codigo = (int) $this->segmento_t->codigo_movimento;
+        elseif($this->segmento_a)
+            $codigo = (int) $this->segmento_a->seu_numero;
+        elseif($this->segmento_j)
+            $codigo = (int) $this->segmento_j->seu_numero;
+        elseif($this->segmento_o)
+            $codigo = (int) $this->segmento_o->seu_numero;
+
+        return $codigo;
     }
 
     /**
@@ -73,7 +87,12 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getValorRecebido()
     {
-        return $this->segmento_u->valor_liquido;
+        $valor_recebido = 0;
+
+        if($this->segmento_u)
+            $this->segmento_u->valor_liquido;
+        
+        return $valor_recebido;
     }
 
     /**
@@ -83,7 +102,17 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getValorTitulo()
     {
-        return $this->segmento_t->valor_titulo;
+        $valor_titulo = 0;
+        if($this->segmento_t)
+            $valor_titulo = $this->segmento_t->valor_titulo;
+        elseif($this->segmento_a)
+            $valor_titulo = $this->segmento_a->valor_pagamento;
+        elseif($this->segmento_j)
+            $valor_titulo = $this->segmento_j->valor_titulo;
+        elseif($this->segmento_o)
+            $valor_titulo = $this->segmento_o->valor_pagamento;
+        
+        return $valor_titulo;
     }
 
     /**
@@ -93,7 +122,17 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getValorPago()
     {
-        return $this->segmento_u->valor_pago;
+        $valor_pago = 0;
+        if($this->segmento_u)
+            $valor_pago = $this->segmento_u->valor_pago;
+        elseif($this->segmento_a)
+            $valor_pago = $this->segmento_a->valor_real;
+        elseif($this->segmento_j)
+            $valor_pago = $this->segmento_j->valor_pagamento;
+        elseif($this->segmento_o)
+            $valor_pago = $this->segmento_o->valor_pago;
+        
+        return $valor_pago;
     }
 
     /**
@@ -103,7 +142,12 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getValorTarifa()
     {
-        return $this->segmento_t->valor_tarifa;
+        $valor_tarifa = 0;
+        
+        if($this->segmento_t)
+            $valor_tarifa = $this->segmento_t->valor_tarifa;
+
+        return $valor_tarifa;
     }
 
     /**
@@ -123,7 +167,13 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getValorDesconto()
     {
-        return $this->segmento_u->valor_desconto;
+        $valor_desconto = 0;
+        if($this->segmento_u)
+            $valor_desconto = $this->segmento_u->valor_desconto;
+        elseif($this->segmento_j)
+            $valor_desconto = $this->segmento_j->descontos;
+        
+        return $valor_desconto;
     }
 
     /**
@@ -133,7 +183,13 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getValorAbatimento()
     {
-        return $this->segmento_u->valor_abatimento;
+        //segmento_j o valor do abatimento está junto com o desconto
+        $valor_abatimento = null;
+
+        if($this->segmento_u)
+            $valor_abatimento = $this->segmento_u->valor_abatimento;
+
+        return $valor_abatimento;
     }
 
     /**
@@ -153,7 +209,12 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getValorOutrosCreditos()
     {
-        return $this->segmento_u->valor_outros_creditos;
+        $outros_creditos = 0;
+
+        if($this->segmento_u)
+            $outros_creditos = $this->segmento_u->valor_outros_creditos;
+        
+        return $outros_creditos;
     }
 
     /**
@@ -163,7 +224,17 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getNumeroDocumento()
     {
-        $numero_documento = $this->segmento_t->numero_documento;
+        $numero_documento = '0';
+        
+        if($this->segmento_t)
+        {
+            $numero_documento = $this->segmento_t->numero_documento;
+        }
+        elseif($this->segmento_a)
+        {
+            $numero_documento = $this->segmento_a->numero_documento_retorno;
+        }
+        
         if (trim($numero_documento, '0') == '') {
             return;
         }
@@ -178,7 +249,22 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getNossoNumero()
     {
-        $nossoNumero = $this->segmento_t->nosso_numero;
+        if($this->segmento_t)
+        {
+            $nossoNumero = $this->segmento_t->nosso_numero;
+        }
+        elseif($this->segmento_a)
+        {
+            $nossoNumero = $this->segmento_a->nosso_numero;
+        }
+        elseif($this->segmento_j)
+        {
+            $nossoNumero = $this->segmento_j->nosso_numero;
+        }
+        elseif($this->segmento_o)
+        {
+            $nossoNumero = $this->segmento_o->nosso_numero;
+        }
 
         if ($this->codigo_banco == 1) {
             $nossoNumero = preg_replace(
@@ -197,13 +283,54 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
     }
 
     /**
+     * Retorna o numero do controle interno.
+     *
+     * @return seu_numero
+     */
+    public function getSeuNumero()
+    {
+        $seu_numero = '';
+
+        if($this->segmento_a)
+        {
+            $seu_numero = $this->segmento_a->seu_numero;
+        }
+        elseif($this->segmento_j)
+        {
+            $seu_numero = $this->segmento_j->seu_numero;
+        }
+        elseif($this->segmento_o)
+        {
+            $seu_numero = $this->segmento_o->seu_numero;
+        }
+
+        return $seu_numero;
+    }
+
+    /**
      * Retorna o objeto \DateTime da data de vencimento do boleto.
      *
      * @return \DateTime
      */
     public function getDataVencimento()
     {
-        $data = $this->segmento_t->data_vencimento ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_t->data_vencimento)) : false;
+        if($this->segmento_t)
+        {
+            $data = $this->segmento_t->data_vencimento ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_t->data_vencimento)) : false;
+        }
+        elseif($this->segmento_j)
+        {
+            $data = $this->segmento_j->data_vencimento ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_j->data_vencimento)) : false;
+        }
+        elseif($this->segmento_o)
+        {
+            $data = $this->segmento_o->data_vencimento ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_o->data_vencimento)) : false;
+        }
+        elseif($this->segmento_a)
+        {
+            $data = null;
+        }
+
         if ($data) {
             $data->setTime(0, 0, 0);
         }
@@ -218,10 +345,31 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getDataCredito()
     {
-        $data = $this->segmento_u->data_credito ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_u->data_credito)) : false;
+        if($this->segmento_u)
+        {
+            $data = $this->segmento_u->data_credito ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_u->data_credito)) : false;
+        }
+        elseif($this->segmento_a)
+        {
+            $data = $this->segmento_a->data_real ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_a->data_real)) : false;
+        }
+        elseif($this->segmento_j)
+        {
+            $data = $this->segmento_j->data_pagamento ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_j->data_pagamento)) : false;
+        }
+        elseif($this->segmento_o)
+        {
+            $data = $this->segmento_o->data_pagamento ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_o->data_pagamento)) : false;
+        }
+        else
+        {
+            $data = null;
+        }
+
         if ($data) {
             $data->setTime(0, 0, 0);
         }
+
 
         return $data;
     }
@@ -231,7 +379,12 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getValorMoraMulta()
     {
-        return $this->segmento_u->valor_acrescimos;
+        $moraMulta = 0;
+        
+        if($this->segmento_u)
+            $moraMulta = $this->segmento_u->valor_acrescimos;
+
+        return $moraMulta;
     }
 
     /**
@@ -241,12 +394,55 @@ class Detalhe extends \Cnab\Format\Linha implements \Cnab\Retorno\IDetalhe
      */
     public function getDataOcorrencia()
     {
-        $data = $this->segmento_u->data_ocorrencia ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_u->data_ocorrencia)) : false;
-        if ($data) {
-            $data->setTime(0, 0, 0);
+        if($this->segmento_u)
+        {
+            $data = $this->segmento_u->data_ocorrencia ? \DateTime::createFromFormat('dmY', sprintf('%08d', $this->segmento_u->data_ocorrencia)) : false;
+
+            if ($data) {
+                $data->setTime(0, 0, 0);
+            }
+        }
+        else
+        {
+            $data = null;
         }
 
         return $data;
+    }
+
+    /**
+     * Retorna a(s) ocorrencia(s), o dia do pagamento.
+     *
+     * @return \DateTime
+     */
+    public function getOcorrencia()
+    {
+        $ocorrencia = '';
+
+        if($this->segmento_a)
+        {
+            $segmento = $this->segmento_a;
+        }
+        elseif($this->segmento_j)
+        {
+            $segmento = $this->segmento_j;
+        }
+        elseif($this->segmento_o)
+        {
+            $segmento = $this->segmento_o;
+        }
+
+        if($segmento)
+        {
+            for( $i = 0; $i < strlen($segmento->ocorrencia); $i +=2)
+            {
+                $ocorrencia .= substr($segmento->ocorrencia,$i,2);
+                if($i+2 < strlen($segmento->ocorrencia))
+                    $ocorrencia .= '_';
+            }
+        }
+
+        return $ocorrencia;
     }
 
     /**

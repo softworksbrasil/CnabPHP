@@ -6,9 +6,13 @@ class Arquivo implements \Cnab\Remessa\IArquivo
 {
     public $headerArquivo;
     public $headerLote;
+    public $arrHeaderLote = array();
     public $detalhes = array();
     public $trailerLote;
     public $trailerArquivo;
+    public $dados;
+    public $numero_sequencial_lote;
+    public $codigo_lote;
 
     private $_data_gravacao;
     private $_data_geracao;
@@ -16,6 +20,7 @@ class Arquivo implements \Cnab\Remessa\IArquivo
     public $codigo_banco;
     public $configuracao = array();
     public $layoutVersao;
+    public $arrSegmento = array();
     const   QUEBRA_LINHA = "\r\n";
 
     public function __construct($codigo_banco, $layoutVersao = null)
@@ -346,6 +351,430 @@ class Arquivo implements \Cnab\Remessa\IArquivo
         $this->detalhes[] = $detalhe;
     }
 
+    public function headerArquivoSISPAG(array $params)
+    {
+        $banco = \Cnab\Banco::getBanco($this->codigo_banco);
+        $campos = array(
+            'data_geracao',
+            'data_gravacao',
+            'nome_fantasia',
+            'razao_social',
+            'codigo_inscricao',
+            'numero_inscricao',
+            'agencia',
+            'conta',
+            'conta_dac',
+        );
+
+
+        foreach ($campos as $campo) {
+            if (array_key_exists($campo, $params)) {
+                if (strpos($campo, 'data_') === 0 && !($params[$campo] instanceof \DateTime)) {
+                    throw new \Exception("config '$campo' need to be instance of DateTime");
+                }
+                $this->configuracao[$campo] = $params[$campo];
+            } else {
+                throw new \Exception('Configuração "'.$campo.'" need to be set');
+            }
+        }
+
+        foreach ($campos as $key) {
+            if (!array_key_exists($key, $params)) {
+                throw new Exception('Configuração "'.$key.'" dont exists');
+            }
+        }
+
+        $this->data_geracao = $this->configuracao['data_geracao'];
+        $this->data_gravacao = $this->configuracao['data_gravacao'];
+
+        $this->headerArquivo = new HeaderArquivo($this);
+        $this->headerLote = new HeaderLote($this);
+        $this->trailerLote = new TrailerLote($this);
+        $this->trailerArquivo = new TrailerArquivo($this);
+
+        $this->headerArquivo->codigo_banco          = $this->banco['codigo_do_banco'];
+        //$this->headerArquivo->lote_servico        = '0000';
+        //$this->headerArquivo->tipo_registro       = 0;
+        //$this->headerArquivo->numero_versao_layout_arquivo = '081';
+        $this->headerArquivo->codigo_inscricao      = $this->configuracao['codigo_inscricao'];
+        $this->headerArquivo->numero_inscricao      = $this->prepareText($this->configuracao['numero_inscricao'], '.-/');
+        $this->headerArquivo->agencia               = $this->configuracao['agencia'];
+        $this->headerArquivo->conta                 = $this->configuracao['conta'];
+        $this->headerArquivo->conta_dac             = $this->configuracao['conta_dac'];
+        $this->headerArquivo->nome_fantasia         = $this->configuracao['nome_fantasia'];
+        $this->headerArquivo->nome_do_banco         = $banco['nome_do_banco'];
+        $this->headerArquivo->codigo_remessa_retorno= 1;
+        $this->headerArquivo->data_geracao          = $this->configuracao['data_geracao'];
+        $this->headerArquivo->hora_geracao          = $this->configuracao['data_geracao'];
+        //$this->headerArquivo->densidade_gravacao_arquivo = 0;
+
+        $this->codigo_lote = 0;
+        $this->trailerArquivo->codigo_banco = $this->headerArquivo->codigo_banco;
+        $this->trailerArquivo->total_qtde_registros = 1;
+        $this->trailerLote->qtde_registro_lote = 0;
+
+        $this->dados = $this->headerArquivo->getEncoded().self::QUEBRA_LINHA;
+    }
+
+    public function headerLoteSISPAG(array $params, $tipo = 'remessa')
+    {
+        $campos = array(
+            'logradouro',
+            'numero_logradouro',
+            'complemento_endereco',
+            'bairro',
+            'cidade',
+            'estado',
+            'cep',
+            'codigo_do_lote',
+            'tipo_pagamento',
+            'forma_pagamento',
+            'identificacao_lancamento',
+            'finalidade_lote',
+            'historico_conta',
+        );
+
+
+        foreach ($campos as $campo) {
+            if (array_key_exists($campo, $params)) {
+                if (strpos($campo, 'data_') === 0 && !($params[$campo] instanceof \DateTime)) {
+                    throw new \Exception("config '$campo' need to be instance of DateTime");
+                }
+                $this->configuracao[$campo] = $params[$campo];
+            } else {
+                throw new \Exception('Configuração "'.$campo.'" need to be set');
+            }
+        }
+
+        foreach ($campos as $key) {
+            if (!array_key_exists($key, $params)) {
+                throw new Exception('Configuração "'.$key.'" dont exists');
+            }
+        }
+
+        // verifica pela forma_pagamento selecionada qual a versão do layout e qual segmento
+        // '040' - Pagamentos através de cheque, OP, DOC, TED e crédito em conta corrente
+        // '030' - Liquidação de títulos (bloquetos) em cobrança no Itaú e em outros Bancos
+        $arr_forma_j = array('30','31');
+        $arr_forma_o = array('13','19','91'); //21
+        $arr_forma_n = array('16','17','18','21','22','25','27','35');
+        if(in_array($this->configuracao['forma_pagamento'], $arr_forma_j))
+        {
+            $versao_layout = '030';
+            $this->arrSegmento = array ('J');
+        }
+        elseif(in_array($this->configuracao['forma_pagamento'], $arr_forma_o))
+        {
+            $versao_layout = '030';
+            $this->arrSegmento = array ('O');
+        }
+        elseif(in_array($this->configuracao['forma_pagamento'], $arr_forma_n))
+        {
+            $versao_layout = '030';
+            $this->arrSegmento = array ('N');
+        }
+        else
+        {
+            $versao_layout = '040';
+            $this->arrSegmento = array ('A');
+        }
+
+        $this->headerLote = new HeaderLote($this);
+
+        $this->headerLote->codigo_banco = $this->headerArquivo->codigo_banco;
+
+        $this->codigo_lote++;
+        $this->headerLote->codigo_do_lote = $this->codigo_lote;// = $this->configuracao['codigo_do_lote']; // É sequencial, iniciando-se em 0001. Todos os pagamentos de um lote devem ter o mesmo "Código de Lote".
+        // $this->headerLote->tipo_registro = 1;
+        // $this->headerLote->tipo_operacao = 'C';
+        // if( $this->configuracao['tipo_pagamento'] == 20 && /* se tratar de lote para financiamento de Bens e Serviços (COMPROR/FINABS) ou Desconto de NPR (Crédito Rural) */
+        //     ($this->configuracao['forma_pagamento'] == '01' || $this->configuracao['forma_pagamento'] == '03'
+        //     || $this->configuracao['forma_pagamento'] == '06' || $this->configuracao['forma_pagamento'] == '07'
+        //     || $this->configuracao['forma_pagamento'] == '41' || $this->configuracao['forma_pagamento'] == '43' ))
+        // {
+        //     $this->headerLote->tipo_operacao = 'F';
+        // }
+        $this->headerLote->tipo_pagamento           = $this->configuracao['tipo_pagamento'];
+        $this->headerLote->forma_pagamento          = $this->configuracao['forma_pagamento'];
+        $this->headerLote->versao_layout_lote       = $versao_layout;
+        $this->headerLote->codigo_inscricao         = $this->headerArquivo->codigo_inscricao;
+        $this->headerLote->numero_inscricao         = $this->headerArquivo->numero_inscricao;
+        $this->headerLote->identificacao_lancamento = $this->configuracao['identificacao_lancamento'];
+        $this->headerLote->agencia                  = $this->headerArquivo->agencia;
+        $this->headerLote->conta                    = $this->headerArquivo->conta;
+        $this->headerLote->conta_dac                = $this->headerArquivo->conta_dac;
+        $this->headerLote->nome_fantasia            = $this->headerArquivo->nome_fantasia;
+        $this->headerLote->finalidade_lote          = $this->configuracao['finalidade_lote'];
+        $this->headerLote->historico_conta          = $this->configuracao['historico_conta'];
+        $this->headerLote->logradouro               = $this->configuracao['logradouro'];
+        $this->headerLote->numero_logradouro        = $this->configuracao['numero_logradouro'];
+        $this->headerLote->complemento_endereco     = $this->configuracao['complemento_endereco'];
+        $this->headerLote->cidade                   = $this->configuracao['cidade'];
+        $this->headerLote->cep                      = $this->configuracao['cep'];
+        $this->headerLote->estado                   = $this->configuracao['estado'];
+        //$this->headerLote->ocorrencia = '';
+
+        $this->trailerArquivo->total_qtde_registros++;
+
+        $this->trailerLote->codigo_banco = $this->headerArquivo->codigo_banco;
+        $this->trailerLote->codigo_do_lote = $this->codigo_lote-1;
+        if( $this->trailerLote->qtde_registro_lote > 0 )
+        {
+            $this->trailerLote->ocorrencia = '';
+            $this->trailerLote->qtde_registro_lote++;
+            $this->dados .= $this->trailerLote->getEncoded().self::QUEBRA_LINHA;
+            $this->trailerArquivo->total_qtde_registros++;
+            $this->trailerArquivo->total_qtde_lotes++;
+        }
+        else
+        {
+            $this->trailerArquivo->total_qtde_lotes = 1;
+        }
+
+        $this->numero_sequencial_lote = 1;
+        $this->trailerLote->qtde_registro_lote = 1;
+        $this->trailerLote->valor_total_lote = 0;
+
+        //$this->arrHeaderLote[] = $this->headerLote;
+        $this->dados .= $this->headerLote->getEncoded().self::QUEBRA_LINHA;
+    }
+
+    public function valido(array $sispag)
+    {
+        $valido = false;
+
+        $detalhe = new Detalhe($this, $this->arrSegmento);
+
+        // SEGMENTO A -------------------------------
+        if( is_int(array_search('A', $this->arrSegmento)) )
+        {
+            if(isset($sispag['tipo_movimento']) && isset($sispag['camara_centralizadora']) && isset($sispag['banco_favorecido'])
+                && isset($sispag['agencia_conta_favorecido']) && isset($sispag['nome_favorecido']) && isset($sispag['seu_numero'])
+                && isset($sispag['data_pagamento']) && isset($sispag['codigo_ispb']) && isset($sispag['valor_pagamento'])
+                && isset($sispag['finalidade_detalhe']) && isset($sispag['numero_inscricao_favorecido'])
+                && isset($sispag['finalidade_doc']) && isset($sispag['finalidade_ted']) && isset($sispag['aviso']))
+            {
+                $valido = true;
+            }
+        }
+        // SEGMENTO J -------------------------------
+        if( is_int(array_search('J', $this->arrSegmento)) )
+        {
+            //converter codigo de barras nos campos
+            $cod_barra = $this->formatarCodigoDeBarras($sispag['codigo_de_barras']);
+
+            if(!isset($cod_barra['banco_favorecido']) || empty($cod_barra['banco_favorecido']) )
+            {
+                file_put_contents('/var/www/html/gsat2/tmp/log_sispag_erro.txt',$texto_log);
+            }
+
+            if(isset($sispag['tipo_movimento']) && isset($sispag['codigo_de_barras'])
+                && isset($cod_barra['banco_favorecido']) && isset($cod_barra['moeda']) && isset($cod_barra['dv'])
+                && isset($cod_barra['vencimento']) && isset($cod_barra['valor']) && isset($cod_barra['campo_livre'])
+                && isset($sispag['nome_favorecido']) && isset($sispag['data_vencimento']) && isset($sispag['valor_titulo'])
+                && isset($sispag['descontos']) && isset($sispag['acrescimos']) && isset($sispag['data_pagamento'])
+                && isset($sispag['valor_pagamento']) && isset($sispag['seu_numero'])
+                && isset($sispag['numero_inscricao_favorecido']))
+            {
+                $valido = true;
+            }
+        }
+        // SEGMENTO O -------------------------------
+        if( is_int(array_search('O', $this->arrSegmento)) )
+        {
+            //converter codigo de barras nos campos
+            $cod_barra = $this->formatarCodigoDeBarras($sispag['codigo_de_barras']);
+
+            if(isset($sispag['tipo_movimento']) && isset($sispag['codigo_de_barras']) && isset($sispag['nome_favorecido'])
+            && isset($sispag['data_vencimento']) && isset($sispag['data_pagamento']) && isset($sispag['nota_fiscal'])
+            && isset($sispag['valor_pagamento']) && isset($sispag['seu_numero']) && isset($cod_barra['codigo_completo']) )
+            {
+                $valido = true;
+            }
+        }
+        // SEGMENTO N -------------------------------
+        if( is_int(array_search('N', $this->arrSegmento)) )
+        {
+            if(isset($sispag['tipo_movimento']) && isset($sispag['codigo_de_barras']) && isset($sispag['nome_favorecido'])
+                && isset($sispag['data_vencimento']) && isset($sispag['data_pagamento']) && isset($sispag['nota_fiscal'])
+                && isset($sispag['valor_pagamento']) && isset($sispag['seu_numero']) )
+            {
+                $valido = true;
+            }
+        }
+
+        return $valido;
+    }
+
+    public function insertDetalheSISPAG(array $sispag, $tipo = 'remessa')
+    {
+        $detalhe = new Detalhe($this, $this->arrSegmento);
+
+        // SEGMENTO A -------------------------------
+        if( is_int(array_search('A', $this->arrSegmento)) )
+        {
+            $detalhe->segmento_a->codigo_banco                = $this->headerArquivo->codigo_banco;
+            $detalhe->segmento_a->codigo_do_lote              = $this->codigo_lote;//$this->headerLote->codigo_do_lote;
+            //$detalhe->segmento_a->tipo_registro             = '3';
+            //$detalhe->segmento_a->numero_sequencial_lote    = $sispag['numero_sequencial_lote'];
+            $detalhe->segmento_a->numero_sequencial_lote = $this->numero_sequencial_lote++;
+            //$detalhe->segmento_a->codigo_segmento           = 'A';
+            $detalhe->segmento_a->tipo_movimento              = $sispag['tipo_movimento'];
+            $detalhe->segmento_a->camara_centralizadora       = $sispag['camara_centralizadora'];
+            $detalhe->segmento_a->banco_favorecido            = $sispag['banco_favorecido'];
+            $detalhe->segmento_a->agencia_conta_favorecido    = $sispag['agencia_conta_favorecido'];
+            $detalhe->segmento_a->nome_favorecido             = $sispag['nome_favorecido'];
+            $detalhe->segmento_a->seu_numero                  = $sispag['seu_numero'];
+            $detalhe->segmento_a->data_pagamento              = $sispag['data_pagamento'] instanceof \DateTime ? $sispag['data_pagamento'] : new \DateTime($sispag['data_pagamento']);
+            //$detalhe->segmento_a->tipo_moeda                = '009';
+            $detalhe->segmento_a->codigo_ispb                 = $sispag['codigo_ispb'];
+            $detalhe->segmento_a->valor_pagamento             = $sispag['valor_pagamento'];
+            $detalhe->segmento_a->nosso_numero                = ''; // consta apenas no retorno
+            //$detalhe->segmento_a->data_real                   = $sispag['data_pagamento'] instanceof \DateTime ? $sispag['data_pagamento'] : new \DateTime($sispag['data_pagamento']); // consta apenas no retorno
+            $detalhe->segmento_a->data_real                   = "00000000"; // consta apenas no retorno
+            $detalhe->segmento_a->valor_real                  = 0; // consta apenas no retorno
+            $detalhe->segmento_a->finalidade_detalhe          = $sispag['finalidade_detalhe'];
+            $detalhe->segmento_a->numero_documento_retorno    = 0; // consta apenas no retorno
+            $detalhe->segmento_a->numero_inscricao_favorecido = $this->prepareText($sispag['numero_inscricao_favorecido'], '.-/');
+            $detalhe->segmento_a->finalidade_doc              = $sispag['finalidade_doc'];
+            $detalhe->segmento_a->finalidade_ted              = $sispag['finalidade_ted'];
+            $detalhe->segmento_a->aviso                       = $sispag['aviso'];
+            //$detalhe->segmento_a->ocorrencia = ''; // consta apenas no retorno
+        }
+        // SEGMENTO J -------------------------------
+        if( is_int(array_search('J', $this->arrSegmento)) )
+        {
+            //converter codigo de barras nos campos
+            $cod_barra = $this->formatarCodigoDeBarras($sispag['codigo_de_barras']);
+
+            if(!isset($cod_barra['banco_favorecido']) || empty($cod_barra['banco_favorecido']) )
+            {
+                file_put_contents('/var/www/html/gsat2/tmp/log_sispag_erro.txt',$texto_log);
+            }
+
+            $detalhe->segmento_j->codigo_banco      = $this->headerArquivo->codigo_banco;
+            $detalhe->segmento_j->codigo_do_lote    = $this->codigo_lote;//$this->headerLote->codigo_do_lote;
+            //$detalhe->segmento_j->tipo_registro   = '3';
+            //$detalhe->segmento_j->numero_sequencial_lote = $sispag['numero_sequencial_lote'];
+            $detalhe->segmento_j->numero_sequencial_lote = $this->numero_sequencial_lote++;
+            //$detalhe->segmento_j->codigo_segmento = 'J';
+            $detalhe->segmento_j->tipo_movimento    = $sispag['tipo_movimento'];
+            $detalhe->segmento_j->banco_favorecido  = $cod_barra['banco_favorecido'];
+            $detalhe->segmento_j->moeda             = $cod_barra['moeda'];
+            $detalhe->segmento_j->dv                = $cod_barra['dv'];
+            $detalhe->segmento_j->vencimento        = $cod_barra['vencimento'];
+            $detalhe->segmento_j->valor             = $cod_barra['valor'];
+            $detalhe->segmento_j->campo_livre       = $cod_barra['campo_livre'];
+            $detalhe->segmento_j->nome_favorecido   = $sispag['nome_favorecido'];
+            $detalhe->segmento_j->data_vencimento   = $sispag['data_vencimento'] instanceof \DateTime ? $sispag['data_vencimento'] : new \DateTime($sispag['data_vencimento']);
+            $detalhe->segmento_j->valor_titulo      = $sispag['valor_titulo'];
+            $detalhe->segmento_j->descontos         = $sispag['descontos'];
+            $detalhe->segmento_j->acrescimos        = $sispag['acrescimos'];
+            $detalhe->segmento_j->data_pagamento    = $sispag['data_pagamento'] instanceof \DateTime ? $sispag['data_pagamento'] : new \DateTime($sispag['data_pagamento']);
+            $detalhe->segmento_j->valor_pagamento   = $sispag['valor_pagamento'];
+            $detalhe->segmento_j->seu_numero        = $sispag['seu_numero'];
+            $detalhe->segmento_j->nosso_numero      = ''; // consta apenas no retorno
+            //$detalhe->segmento_j->ocorrencia      = ''; // consta apenas no retorno
+
+            if( $this->headerLote->forma_pagamento == '30' || $this->headerLote->forma_pagamento == '31' )
+            {
+                $detalhe->segmento_j52->codigo_banco                  = $this->headerArquivo->codigo_banco;
+                $detalhe->segmento_j52->codigo_do_lote                = $this->codigo_lote;//$this->headerLote->codigo_do_lote;
+                //$detalhe->segmento_j52->tipo_registro               = '3';
+                //$detalhe->segmento_j52->numero_sequencial_lote      = $sispag['numero_sequencial_lote'];
+                $detalhe->segmento_j52->numero_sequencial_lote        = $detalhe->segmento_j->numero_sequencial_lote;
+                //$detalhe->segmento_j52->codigo_segmento             = 'J';
+                $detalhe->segmento_j52->tipo_movimento                = $sispag['tipo_movimento'];
+                //$detalhe->segmento_j52->codigo_registro             = '52';
+                $detalhe->segmento_j52->codigo_inscricao_pagador      = $this->headerLote->codigo_inscricao;
+                $detalhe->segmento_j52->numero_inscricao_pagador      = $this->headerLote->numero_inscricao;
+                $detalhe->segmento_j52->nome_pagador                  = $this->headerLote->nome_fantasia;
+                $detalhe->segmento_j52->codigo_inscricao_beneficiario = strlen($this->prepareText($sispag['numero_inscricao_favorecido'], '.-/')) != 14 ? '1' : '2';
+                $detalhe->segmento_j52->numero_inscricao_beneficiario = $this->prepareText($sispag['numero_inscricao_favorecido'], '.-/');
+                $detalhe->segmento_j52->nome_beneficiario             = $sispag['nome_favorecido'];
+                $detalhe->segmento_j52->codigo_inscricao_sacador      = '0';
+                $detalhe->segmento_j52->numero_inscricao_sacador      = '0';
+                $detalhe->segmento_j52->nome_sacador                  = '';
+
+                $this->trailerArquivo->total_qtde_registros++;
+                $this->trailerLote->qtde_registro_lote++;
+            }
+        }
+        // SEGMENTO O -------------------------------
+        if( is_int(array_search('O', $this->arrSegmento)) )
+        {
+            //converter codigo de barras nos campos
+            $cod_barra = $this->formatarCodigoDeBarras($sispag['codigo_de_barras']);
+
+            $detalhe->segmento_o->codigo_banco     = $this->headerArquivo->codigo_banco;
+            $detalhe->segmento_o->codigo_do_lote   = $this->codigo_lote;//$this->headerLote->codigo_do_lote;
+            //$detalhe->segmento_o->tipo_registro  = '3';
+            //$detalhe->segmento_o->numero_sequencial_lote = $sispag['numero_sequencial_lote'];
+            $detalhe->segmento_o->numero_sequencial_lote = $this->numero_sequencial_lote++;
+            //$detalhe->segmento_o->codigo_segmento = 'O';
+            $detalhe->segmento_o->tipo_movimento   = $sispag['tipo_movimento'];
+            $detalhe->segmento_o->codigo_de_barras = $cod_barra['codigo_completo'];
+            $detalhe->segmento_o->nome_favorecido  = $sispag['nome_favorecido'];
+            $detalhe->segmento_o->data_vencimento  = $sispag['data_vencimento'] instanceof \DateTime ? $sispag['data_vencimento'] : new \DateTime($sispag['data_vencimento']);
+            //$detalhe->segmento_o->tipo_moeda       = 'REA'; //tipo da moeda REA ou 009
+            $detalhe->segmento_o->quantidade_moeda = '0'; //Se a moeda não for real, colocar aqui o valor
+            $detalhe->segmento_o->valor_pagamento  = $sispag['valor_pagamento'];
+            $detalhe->segmento_o->data_pagamento   = $sispag['data_pagamento'] instanceof \DateTime ? $sispag['data_pagamento'] : new \DateTime($sispag['data_pagamento']);
+            $detalhe->segmento_o->valor_pago       = '0'; // consta apenas no retorno
+            $detalhe->segmento_o->nota_fiscal      = $sispag['nota_fiscal'];
+            /* Campo de preenchimento obrigatório para pagamento na forma de GNRE-SP com código de receita 10009.9
+            – Substituição Tributária por Operação. Para demais pagamentos de tributos com código de barras ou
+            GNRE-SP com outros códigos de receita, este campo deverá ser preenchido com zeros ou brancos. */
+            $detalhe->segmento_o->seu_numero       = $sispag['seu_numero'];
+            $detalhe->segmento_o->nosso_numero     = ''; // consta apenas no retorno
+            //$detalhe->segmento_o->ocorrencia     = ''; // consta apenas no retorno
+        }
+        // SEGMENTO N -------------------------------
+        if( is_int(array_search('N', $this->arrSegmento)) )
+        {
+            //converter codigo de barras nos campos
+            $cod_barra = null;
+            if( isset($sispag['codigo_de_barras']) && $sispag['codigo_de_barras'] != '');
+            {
+                $cod_barra = $sispag['codigo_de_barras'];
+            }
+
+            $data_pagamento = $sispag['data_pagamento']->format('dmY');
+
+            $detalhe->segmento_n->codigo_banco = $this->headerArquivo->codigo_banco;
+            $detalhe->segmento_n->codigo_do_lote = $this->codigo_lote;//$this->headerLote->codigo_do_lote;
+            //$detalhe->segmento_n->tipo_registro = '3';
+            $detalhe->segmento_n->numero_sequencial_lote = $this->numero_sequencial_lote++;
+            //$detalhe->segmento_n->codigo_segmento = 'N';
+            $detalhe->segmento_n->tipo_movimento = $sispag['tipo_movimento'];
+            $detalhe->segmento_n->dados_tributo = $this->dadosPagamento($this->configuracao['forma_pagamento'], $data_pagamento, $sispag['valor_pagamento'], $sispag['codigo_receita'], $sispag['identificador'], $cod_barra);
+            $detalhe->segmento_n->seu_numero = $sispag['seu_numero'];
+            $detalhe->segmento_n->nosso_numero = ''; // consta apenas no retorno
+            //$detalhe->segmento_n->ocorrencia = ''; // consta apenas no retorno
+        }
+
+        //$this->detalhes[] = $detalhe;
+        // $arr = $detalhe->listSegmento();
+        // $segmentos = array_filter($arr);
+        // foreach ($segmentos as $segmento)
+        // {
+        //     if($segmento != 'J52')
+        //         $segmento->numero_sequencial_lote = $this->numero_sequencial_lote++;
+        // }
+
+        $this->trailerLote->qtde_registro_lote++;
+
+        if (!$detalhe->validate()) {
+            throw new \InvalidArgumentException($detalhe->last_error);
+        }
+        $this->dados .= $detalhe->getEncoded().self::QUEBRA_LINHA;
+
+        $this->trailerArquivo->total_qtde_registros++;
+
+
+        $this->trailerLote->valor_total_lote += $sispag['valor_pagamento'];
+    }
+
     public function formatarNossoNumero($nossoNumero)
     {
         if(!$nossoNumero)
@@ -384,6 +813,232 @@ class Arquivo implements \Cnab\Remessa\IArquivo
         }
 
         return $nossoNumero;
+    }
+
+    /**
+     * Formata Codigo de barras e retorna os valores em um array com a key o nome dos campos utilizados no segmento
+     * @param string $codigoDeBarras
+     * @return array
+     */
+    public function formatarCodigoDeBarras($codigoDeBarras)
+    {
+        $arrDados = array();
+        $arrDados['codigo_completo'] = $codigoDeBarras;
+        $codigoDeBarras = str_replace(' ', '', $codigoDeBarras);
+        $codigoDeBarras = str_replace('.', '', $codigoDeBarras);
+
+        if( strlen(str_replace(' ', '', $codigoDeBarras)) == 47 ) //formatar boleto
+        {
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -14, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -16, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -18, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, '.', -24, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -30, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -32, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, '.', -38, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -44, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -46, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, '.', -51, 0);
+        }
+
+        if( strlen(str_replace(' ', '', $codigoDeBarras)) == 48 )
+        {
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -1, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -13, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -15, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -27, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -29, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -41, 0);
+            $codigoDeBarras = substr_replace($codigoDeBarras, ' ', -43, 0);
+        }
+
+        if( strlen($codigoDeBarras) == 57 )
+        {
+            $campo = array();
+            $dv = array();
+            $campo['1'] = str_replace('.', '', substr($codigoDeBarras,0,10));
+            $dv['1'] = substr($codigoDeBarras,11, 1);
+            $campo['2'] = str_replace('.', '', substr($codigoDeBarras,13,11));
+            $dv['2'] = substr($codigoDeBarras,25, 1);
+            $campo['3'] = str_replace('.', '', substr($codigoDeBarras,27,11));
+            $dv['3'] = substr($codigoDeBarras,39, 1);
+            $restante = str_replace(' ', '', substr($codigoDeBarras,40));
+
+            $codigoDeBarras_aux = $campo['1'].$campo['2'].$campo['3'].$restante;
+
+            $codigoDeBarras = substr($codigoDeBarras_aux,0,4);
+            $codigoDeBarras .= substr($codigoDeBarras_aux,29,1);
+            $codigoDeBarras .= substr($codigoDeBarras_aux,30,4);
+            $codigoDeBarras .= substr($codigoDeBarras_aux,34);
+            $codigoDeBarras .= substr($codigoDeBarras_aux,4,25);
+
+            $arrDados['codigo_completo']  = $codigoDeBarras;
+
+            $arrDados['banco_favorecido'] = substr($codigoDeBarras,0,3);
+            $arrDados['moeda']            = substr($codigoDeBarras,3,1);
+            $arrDados['dv']               = substr($codigoDeBarras,4,1);
+            $arrDados['vencimento']       = substr($codigoDeBarras,5,4);
+            $arrDados['valor']            = substr($codigoDeBarras,9,8) . "." . substr($codigoDeBarras,17,2);
+            $arrDados['campo_livre']      = substr($codigoDeBarras,19);
+        }
+        elseif( strlen($codigoDeBarras) == 54 )
+        {
+            $campo = array();
+            $dv = array();
+            $campo['1'] = str_replace('.', '', substr($codigoDeBarras,0,10));
+            $dv['1'] = substr($codigoDeBarras,10, 1);
+            $campo['2'] = str_replace('.', '', substr($codigoDeBarras,12,11));
+            $dv['2'] = substr($codigoDeBarras,23, 1);
+            $campo['3'] = str_replace('.', '', substr($codigoDeBarras,25,11));
+            $dv['3'] = substr($codigoDeBarras,36, 1);
+            $restante = str_replace(' ', '', substr($codigoDeBarras,38));
+
+            $codigoDeBarras_aux = $campo['1'].$campo['2'].$campo['3'].$restante;
+
+            $codigoDeBarras = substr($codigoDeBarras_aux,0,4);
+            $codigoDeBarras .= substr($codigoDeBarras_aux,29,1);
+            $codigoDeBarras .= substr($codigoDeBarras_aux,30,4);
+            $codigoDeBarras .= substr($codigoDeBarras_aux,34);
+            $codigoDeBarras .= substr($codigoDeBarras_aux,4,25);
+
+            $arrDados['codigo_completo']  = $codigoDeBarras;
+
+            $arrDados['banco_favorecido'] = substr($codigoDeBarras,0,3);
+            $arrDados['moeda']            = substr($codigoDeBarras,3,1);
+            $arrDados['dv']               = substr($codigoDeBarras,4,1);
+            $arrDados['vencimento']       = substr($codigoDeBarras,5,4);
+            $arrDados['valor']            = substr($codigoDeBarras,9,8) . "." . substr($codigoDeBarras,17,2);
+            $arrDados['campo_livre']      = substr($codigoDeBarras,19);
+        }
+        elseif( strlen($codigoDeBarras) == 55 )
+        {
+            $campo = array();
+            $dv = array();
+            $campo['1'] = str_replace('.', '', substr($codigoDeBarras,0,11));
+            $dv['1'] = substr($codigoDeBarras,12, 1);
+            $campo['2'] = str_replace('.', '', substr($codigoDeBarras,14,11));
+            $dv['2'] = substr($codigoDeBarras,26, 1);
+            $campo['3'] = str_replace('.', '', substr($codigoDeBarras,28,11));
+            $dv['3'] = substr($codigoDeBarras,40, 1);
+            $campo['4'] = str_replace('.', '', substr($codigoDeBarras,42,11));
+            $dv['4'] = substr($codigoDeBarras,54, 1);
+
+        }
+        else
+        {
+            $arrDados['id_produto']      = substr($codigoDeBarras,0,1);
+            $arrDados['id_segmento']     = substr($codigoDeBarras,1,1); // 1=Prefeituras(IPTU) | 2=Saneamento | 3=Energia Elétrica e Gás | 4=Telecomunicações
+            $arrDados['id_valor']        = substr($codigoDeBarras,2,1); // Identificação do valor real ou referência - 6 = Reais | 7 = Moeda Variável
+            $arrDados['dv']              = substr($codigoDeBarras,3,1);
+            $arrDados['valor']           = substr($codigoDeBarras,4,9).".".substr($codigoDeBarras,13,2);
+            $arrDados['id_empresa']      = substr($codigoDeBarras,15,4); //Identificação da Empresa / Órgão
+            $arrDados['campo_livre']     = substr($codigoDeBarras,19);
+        }
+
+        return $arrDados;
+    }
+
+    /**
+     * Formata os dados de pagamento de acordo com a forma de pagamento selecionada
+     * @param string $forma_pagamento (código)
+     * @return string
+     */
+    public function dadosPagamento($forma_pagamento, $data_pagamento, $valor_pagamento, $codigo_receita, $identificador = null, $codigo_de_barras = null) //16,17,18,21,22,25,27,35
+    {
+        $retorno = '';
+
+        $dados = [];
+
+        switch($forma_pagamento)
+        {
+            case '16' : // DARF
+
+                break;
+            case '17' : // GPS
+
+                break;
+            case '18' : // DARF SIMPLES
+
+                break;
+            case '21' : // DARJ
+
+                break;
+            case '22' : // GARE
+
+                break;
+            case '25' : // IPVA
+            case '27' : // DPVAT
+
+                break;
+            case '35' : // FGTS
+                    $remuneracao_calculada = str_pad(str_replace('.', '',$valor_pagamento),14, '0', STR_PAD_LEFT);
+
+                    $multiplicador = 1;
+                    $soma = 0;
+                    for( $i = strlen($remuneracao_calculada); $i > 0; $i--)
+                    {
+                        if( $i != 4)
+                        {
+                            $multiplicador = $multiplicador < 9 ? $multiplicador+1 : 2;
+                            $mult = $remuneracao_calculada[$i-1] * $multiplicador;
+                            $soma += $mult;
+                        }
+
+                    }
+                    $dv1 = 11 - ($soma % 11);
+
+                    //Se o $dv1 for igual a 0, 1, 10 ou 11, considerem DV = 1.
+                    if($dv1 == 10 || $dv1 == 0 || $dv1 == 11)
+                    {
+                        $dv1 = 1;
+                    }
+
+                    $identificador_fgts = $remuneracao_calculada.$dv1;
+
+                    $multiplicador = 1;
+                    $soma = 0;
+                    for( $i = strlen($identificador_fgts); $i > 0; $i--)
+                    {
+                        if( $i != 4)
+                        {
+                            $multiplicador = $multiplicador < 9 ? $multiplicador+1 : 2;
+                            $mult = $identificador_fgts[$i-1] * $multiplicador;
+                            $soma += $mult;
+                        }
+
+                    }
+                    $dv2 = $soma % 11;
+
+                    if($dv2 == 1)
+                    {
+                        $identificador_fgts .= '0';
+                    }
+                    else
+                    {
+                        $identificador_fgts .= $dv2;
+                    }
+
+                    $dados[1] = '11'; //9(02) => Tributo 11 = FGTS
+                    $dados[2] = $codigo_receita; //9(04) => Código da receita
+                    $dados[3] = $this->headerLote->codigo_inscricao == 2 ? '1' : '2'; //9(01) => 1 = CNPJ | 2 = CEI
+                    $dados[4] = str_pad($this->headerLote->numero_inscricao,14, '0', STR_PAD_LEFT); //9(14) => CPF/CNPJ
+                    $dados[5] = str_replace(' ', '',$codigo_de_barras); //X(48) => código de barras
+                    $dados[6] = $identificador_fgts; //9(16) => Identificador FGTS
+                    $dados[7] = '         '; //9(09) => Lacre de Conectividade Social
+                    $dados[8] = '  '; //9(02) => Dígito do Lacre
+                    $dados[9] = str_pad($this->headerLote->nome_fantasia,30, ' ', STR_PAD_LEFT); //X(30) => Nome Contribuinte
+                    $dados[10] = $data_pagamento; //9(08) => DDMMAAAA
+                    $dados[11] = $remuneracao_calculada; //9(12)V9(02) => valor pagamento
+                    $dados[12] = '                              '; //X(30)  => brancos
+                break;
+        }
+
+        foreach($dados as $dado)
+        {
+            $retorno .= $dado;
+        }
+
+        return $retorno;
     }
 
     public function listDetalhes()
@@ -504,6 +1159,40 @@ class Arquivo implements \Cnab\Remessa\IArquivo
         return $dados;
     }
 
+    public function getTextSISPAG()
+    {
+        //$numero_sequencial_lote = 1;
+        //$qtde_titulo_cobranca_simples = 0;
+        $valor_total_lote = 0;
+
+        // valida os dados
+        if (!$this->headerArquivo->validate()) {
+            throw new \InvalidArgumentException($this->headerArquivo->last_error);
+        }
+
+        if (!$this->headerLote->validate()) {
+            throw new \InvalidArgumentException($this->headerLote->last_error);
+        }
+
+        $this->trailerLote->ocorrencia = '';
+
+        if (!$this->trailerLote->validate()) {
+            throw new \InvalidArgumentException($this->trailerLote->last_error);
+        }
+
+        if (!$this->trailerArquivo->validate()) {
+            throw new \InvalidArgumentException($this->trailerArquivo->last_error);
+        }
+
+        $this->trailerLote->qtde_registro_lote++;
+        $this->trailerLote->codigo_do_lote = $this->codigo_lote++;
+        $this->dados .= $this->trailerLote->getEncoded().self::QUEBRA_LINHA;
+        $this->trailerArquivo->total_qtde_registros += 2;
+        $this->dados .= $this->trailerArquivo->getEncoded().self::QUEBRA_LINHA;
+
+        return $this->dados;
+    }
+
     public function countDetalhes()
     {
         return count($this->detalhes);
@@ -512,6 +1201,15 @@ class Arquivo implements \Cnab\Remessa\IArquivo
     public function save($filename)
     {
         $text = $this->getText();
+
+        file_put_contents($filename, $text);
+
+        return $filename;
+    }
+
+    public function saveSISPAG($filename)
+    {
+        $text = $this->getTextSISPAG();
 
         file_put_contents($filename, $text);
 

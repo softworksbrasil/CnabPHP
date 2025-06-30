@@ -42,6 +42,24 @@ class Lote
             if ($this->lastDetalhe) {
                 $this->lastDetalhe->segmento_w = $segmento;
             }
+        } elseif ('A' == $codigo_segmento) {
+            $segmento = new SegmentoA($this->arquivo);
+            $segmento->loadFromString($linha);
+            $this->lastDetalhe = new Detalhe($this->arquivo);
+            $this->detalhes[] = $this->lastDetalhe;
+            $this->lastDetalhe->segmento_a = $segmento;
+        } elseif ('J' == $codigo_segmento) {
+            $segmento = new SegmentoJ($this->arquivo);
+            $segmento->loadFromString($linha);
+            $this->lastDetalhe = new Detalhe($this->arquivo);
+            $this->detalhes[] = $this->lastDetalhe;
+            $this->lastDetalhe->segmento_j = $segmento;
+        } elseif ('O' == $codigo_segmento) {
+            $segmento = new SegmentoO($this->arquivo);
+            $segmento->loadFromString($linha);
+            $this->lastDetalhe = new Detalhe($this->arquivo);
+            $this->detalhes[] = $this->lastDetalhe;
+            $this->lastDetalhe->segmento_o = $segmento;
         }
 
         return $segmento;
