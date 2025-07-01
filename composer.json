@@ -1,17 +1,13 @@
 {
-    "name": "andersondanilo/cnab_php",
+    "name": "softworks/cnab_php",
     "type": "library",
-    "description": "Projeto para criar arquivos de remessas e processar arquivos de retorno no formato CNAB",
+    "description": "Fork do CnabPHP com ajustes personalizados",
     "keywords": ["boleto", "remessa", "retorno"],
     "licence": "MIT",
     "authors": [
         {
-            "name": "Anderson Danilo",
-            "email": "andersondanilo.souza@gmail.com"
-        },
-        {
-            "name": "Hermenegildo Marin Junior",
-            "email": "hmarinjr@gmail.com"
+            "name": "André Corneta",
+            "email": "andre.corneta@softworksbrasil.com.br"
         }
     ],
     "require-dev": {
